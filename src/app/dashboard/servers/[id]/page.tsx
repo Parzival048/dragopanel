@@ -111,7 +111,7 @@ export default function ServerDetailPage({ params }: { params: Promise<{ id: str
         }
 
         fetchServer()
-        const interval = setInterval(fetchServer, 5000) // Refresh every 5 seconds
+        const interval = setInterval(fetchServer, 1000) // Refresh every second
         return () => clearInterval(interval)
     }, [id, authStatus, router])
 

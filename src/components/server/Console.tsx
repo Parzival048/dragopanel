@@ -48,7 +48,7 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
     const [powerAction, setPowerAction] = useState<string | null>(null)
     const [consoleLogs, setConsoleLogs] = useState<string[]>([
         '\x1b[36m[Dragohost] Console connected via API polling\x1b[0m',
-        '\x1b[33m[Dragohost] Real-time updates every 2 seconds\x1b[0m'
+        '\x1b[33m[Dragohost] Real-time updates every second\x1b[0m'
     ])
     const [resources, setResources] = useState<ResourceStats>({
         cpu: 0,
@@ -118,10 +118,10 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
         }
     }, [identifier, limits.memory])
 
-    // Polling loop
+    // Polling loop - every 1 second
     useEffect(() => {
         fetchResources()
-        const interval = setInterval(fetchResources, 2000) // Poll every 2 seconds
+        const interval = setInterval(fetchResources, 1000) // Poll every second
         return () => clearInterval(interval)
     }, [fetchResources])
 
@@ -221,7 +221,7 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
                                 <WifiOff className="w-3 h-3 text-red-400" />
                             )}
                             <span className={`text-[10px] font-bold uppercase ${status === 'connected' ? 'text-green-400' :
-                                    status === 'polling' ? 'text-cyan-400' : 'text-red-400'
+                                status === 'polling' ? 'text-cyan-400' : 'text-red-400'
                                 }`}>
                                 {status === 'connected' ? 'Live' : status}
                             </span>
