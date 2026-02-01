@@ -98,7 +98,24 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
                     networkTx: data.resources.networkTx || 0,
                     uptime: data.resources.uptime || 0
                 })
-                setStatus('connected')
+
+                // Check if we're in fallback mode
+                if (data._fallback) {
+                    setStatus('error')
+                    // Only add warning once
+                    setConsoleLogs(prev => {
+                        if (!prev.some(log => log.includes('CLIENT_KEY'))) {
+                            return [...prev,
+                                '\x1b[33m⚠ Warning: Unable to fetch live resources from Pterodactyl.\x1b[0m',
+                                '\x1b[33m  Please configure PTERODACTYL_CLIENT_KEY with an admin user\'s API key.\x1b[0m',
+                                ''
+                            ]
+                        }
+                        return prev
+                    })
+                } else {
+                    setStatus('connected')
+                }
 
                 // Update history for graph
                 setResourceHistory(prev => {
