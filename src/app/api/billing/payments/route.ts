@@ -26,7 +26,7 @@ export async function GET() {
         })
 
         return NextResponse.json({
-            payments: payments.map(payment => ({
+            payments: payments.map((payment: typeof payments[number]) => ({
                 id: payment.id,
                 orderId: payment.orderId,
                 amount: Number(payment.amount),

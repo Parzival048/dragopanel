@@ -119,13 +119,19 @@ export async function POST(request: NextRequest) {
                 const expiresAt = new Date()
                 expiresAt.setDate(expiresAt.getDate() + 30)
 
-                // Create server in our database
+                // Standardize Pterodactyl server creation response handling
+                const serverAttributes = pterodactylServer.attributes;
+
+                if (!serverAttributes) {
+                    throw new Error('Failed to retrieve server attributes from Pterodactyl response')
+                }
+
                 const server = await prisma.server.create({
                     data: {
                         name: payment.serverName || 'Minecraft Server',
-                        pterodactylId: pterodactylServer.data.attributes.id,
-                        identifier: pterodactylServer.data.attributes.identifier,
-                        uuid: pterodactylServer.data.attributes.uuid,
+                        pterodactylId: serverAttributes.id,
+                        identifier: serverAttributes.identifier,
+                        uuid: serverAttributes.uuid,
                         userId: payment.userId,
                         planId: payment.planId || 'starter',
                         eggId,

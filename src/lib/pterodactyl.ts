@@ -209,7 +209,7 @@ class PterodactylAPI {
     }
 
     async createServer(params: CreateServerParams) {
-        return this.applicationRequest<ApiResponse<{ attributes: PterodactylServer }>>(
+        return this.applicationRequest<{ attributes: PterodactylServer }>(
             '/servers',
             'POST',
             params

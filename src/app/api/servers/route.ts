@@ -165,12 +165,14 @@ export async function POST(request: NextRequest) {
         expiresAt.setDate(expiresAt.getDate() + 30)
 
         // Create server in our database
+        const serverAttributes = pterodactylServer.attributes
+
         const server = await prisma.server.create({
             data: {
                 name,
-                pterodactylId: pterodactylServer.data.attributes.id,
-                identifier: pterodactylServer.data.attributes.identifier,
-                uuid: pterodactylServer.data.attributes.uuid,
+                pterodactylId: serverAttributes.id,
+                identifier: serverAttributes.identifier,
+                uuid: serverAttributes.uuid,
                 userId: session.user.id,
                 planId: plan.id,
                 eggId,
