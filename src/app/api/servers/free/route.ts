@@ -95,28 +95,39 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Get or create Pterodactyl user
+        // Determine Pterodactyl user for server ownership
+        // If PTERODACTYL_ADMIN_USER_ID is set, use it for all servers (ensures CLIENT_KEY access)
+        // Otherwise, create individual user accounts
         let pterodactylUserId = 1
-        try {
-            const searchResponse = await pterodactyl.getUserByEmail(session.user.email!)
-            if (searchResponse.data && searchResponse.data.length > 0) {
-                pterodactylUserId = searchResponse.data[0].attributes.id
-            } else {
-                // Create user in Pterodactyl if not found
-                const newUser = await pterodactyl.createUser({
-                    email: session.user.email!,
-                    username: session.user.email!.split('@')[0] + Math.random().toString(36).substring(2, 7),
-                    first_name: session.user.name?.split(' ')[0] || 'User',
-                    last_name: session.user.name?.split(' ').slice(1).join(' ') || 'Player',
-                })
-                pterodactylUserId = newUser.attributes.id
+        const adminUserId = process.env.PTERODACTYL_ADMIN_USER_ID
+
+        if (adminUserId && !isNaN(parseInt(adminUserId))) {
+            // Use the admin user for all servers - ensures CLIENT_KEY can access them
+            pterodactylUserId = parseInt(adminUserId)
+            console.log('Using admin user for server creation:', pterodactylUserId)
+        } else {
+            // Legacy behavior: create individual Pterodactyl users
+            try {
+                const searchResponse = await pterodactyl.getUserByEmail(session.user.email!)
+                if (searchResponse.data && searchResponse.data.length > 0) {
+                    pterodactylUserId = searchResponse.data[0].attributes.id
+                } else {
+                    // Create user in Pterodactyl if not found
+                    const newUser = await pterodactyl.createUser({
+                        email: session.user.email!,
+                        username: session.user.email!.split('@')[0] + Math.random().toString(36).substring(2, 7),
+                        first_name: session.user.name?.split(' ')[0] || 'User',
+                        last_name: session.user.name?.split(' ').slice(1).join(' ') || 'Player',
+                    })
+                    pterodactylUserId = newUser.attributes.id
+                }
+            } catch (e) {
+                console.error('Failed to find/create Pterodactyl user:', e)
+                return NextResponse.json(
+                    { error: 'Failed to set up user account. Please try again.' },
+                    { status: 500 }
+                )
             }
-        } catch (e) {
-            console.error('Failed to find/create Pterodactyl user:', e)
-            return NextResponse.json(
-                { error: 'Failed to set up user account. Please try again.' },
-                { status: 500 }
-            )
         }
 
         // Create environment object with default values from egg variables

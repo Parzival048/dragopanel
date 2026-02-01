@@ -4,6 +4,8 @@
 const PTERODACTYL_URL = process.env.PTERODACTYL_URL!
 const PTERODACTYL_API_KEY = process.env.PTERODACTYL_API_KEY!
 const PTERODACTYL_CLIENT_KEY = process.env.PTERODACTYL_CLIENT_KEY!
+// Email of the admin user whose CLIENT_KEY we're using - used for subuser access
+const PTERODACTYL_CLIENT_EMAIL = process.env.PTERODACTYL_CLIENT_EMAIL || ''
 
 interface ApiResponse<T> {
     object: string
@@ -295,6 +297,44 @@ class PterodactylAPI {
                 }
             }
         }>(`/servers/${identifier}/resources`)
+    }
+
+    // ========================
+    // SUBUSER MANAGEMENT (Client API)
+    // ========================
+
+    // Get the admin email for subuser access
+    getClientEmail(): string {
+        return PTERODACTYL_CLIENT_EMAIL
+    }
+
+    // Add a subuser to a server (must be called by server owner's API key)
+    async addSubuser(identifier: string, email: string, permissions: string[]) {
+        return this.clientRequest<{
+            attributes: {
+                uuid: string
+                username: string
+                email: string
+                permissions: string[]
+            }
+        }>(`/servers/${identifier}/users`, 'POST', {
+            email,
+            permissions
+        })
+    }
+
+    // Get list of subusers
+    async listSubusers(identifier: string) {
+        return this.clientRequest<{
+            data: Array<{
+                attributes: {
+                    uuid: string
+                    username: string
+                    email: string
+                    permissions: string[]
+                }
+            }>
+        }>(`/servers/${identifier}/users`)
     }
 
     // ========================
