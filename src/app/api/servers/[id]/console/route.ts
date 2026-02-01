@@ -95,22 +95,36 @@ export async function POST(
         }
 
         // Send command to Pterodactyl
-        await pterodactyl.sendCommand(identifier, command)
+        try {
+            await pterodactyl.sendCommand(identifier, command)
+        } catch (pterodactylError) {
+            const detail = pterodactylError instanceof Error ? pterodactylError.message : 'Unknown error'
+            console.error('Pterodactyl command error:', detail)
+            return NextResponse.json(
+                { error: `Pterodactyl error: ${detail}` },
+                { status: 500 }
+            )
+        }
 
-        // Log the command
-        await prisma.commandLog.create({
-            data: {
-                serverId: server.id,
-                userId: session.user.id,
-                command
-            }
-        })
+        // Log the command (don't fail if logging fails)
+        try {
+            await prisma.commandLog.create({
+                data: {
+                    serverId: server.id,
+                    userId: session.user.id,
+                    command
+                }
+            })
+        } catch (logError) {
+            console.error('Failed to log command:', logError)
+        }
 
         return NextResponse.json({ success: true })
     } catch (error) {
         console.error('Failed to send command:', error)
+        const detail = error instanceof Error ? error.message : 'Unknown error'
         return NextResponse.json(
-            { error: 'Failed to send command' },
+            { error: `Failed to send command: ${detail}` },
             { status: 500 }
         )
     }

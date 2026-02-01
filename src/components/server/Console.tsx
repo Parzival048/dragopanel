@@ -15,9 +15,10 @@ import {
     RotateCw,
     Square,
     Skull,
-    Wifi,
+    RefreshCw,
     WifiOff,
-    RefreshCw
+    Activity,
+    ChevronRight
 } from 'lucide-react'
 import { formatBytes } from '@/lib/utils'
 
@@ -42,14 +43,14 @@ interface ResourceStats {
 
 export default function ServerConsole({ serverId, identifier, limits }: ServerConsoleProps) {
     const consoleRef = useRef<HTMLDivElement>(null)
+    const inputRef = useRef<HTMLInputElement>(null)
     const [status, setStatus] = useState<'polling' | 'connected' | 'error'>('polling')
     const [serverState, setServerState] = useState<string>('offline')
     const [command, setCommand] = useState('')
+    const [commandHistory, setCommandHistory] = useState<string[]>([])
+    const [historyIndex, setHistoryIndex] = useState(-1)
     const [powerAction, setPowerAction] = useState<string | null>(null)
-    const [consoleLogs, setConsoleLogs] = useState<string[]>([
-        '\x1b[36m[Dragohost] Console connected via API polling\x1b[0m',
-        '\x1b[33m[Dragohost] Real-time updates every second\x1b[0m'
-    ])
+    const [consoleLogs, setConsoleLogs] = useState<string[]>([])
     const [resources, setResources] = useState<ResourceStats>({
         cpu: 0,
         memory: 0,
@@ -73,12 +74,12 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
 
     // Parse ANSI codes for display
     const parseAnsi = (text: string) => {
-        // Simple ANSI to HTML conversion
         return text
             .replace(/\x1b\[36m/g, '<span class="text-cyan-400">')
             .replace(/\x1b\[32m/g, '<span class="text-green-400">')
             .replace(/\x1b\[33m/g, '<span class="text-yellow-400">')
             .replace(/\x1b\[31m/g, '<span class="text-red-400">')
+            .replace(/\x1b\[35m/g, '<span class="text-purple-400">')
             .replace(/\x1b\[0m/g, '</span>')
     }
 
@@ -120,8 +121,17 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
 
     // Polling loop - every 1 second
     useEffect(() => {
+        // Add initial welcome message
+        setConsoleLogs([
+            '\x1b[36m┌──────────────────────────────────────────────────────┐\x1b[0m',
+            '\x1b[36m│\x1b[0m  \x1b[35m🚀 Dragohost Console\x1b[0m                                \x1b[36m│\x1b[0m',
+            '\x1b[36m│\x1b[0m  Connected via API polling • Updates every second   \x1b[36m│\x1b[0m',
+            '\x1b[36m└──────────────────────────────────────────────────────┘\x1b[0m',
+            ''
+        ])
+
         fetchResources()
-        const interval = setInterval(fetchResources, 1000) // Poll every second
+        const interval = setInterval(fetchResources, 1000)
         return () => clearInterval(interval)
     }, [fetchResources])
 
@@ -132,6 +142,28 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
         }
     }, [consoleLogs])
 
+    // Handle key navigation in command history
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'ArrowUp') {
+            e.preventDefault()
+            if (historyIndex < commandHistory.length - 1) {
+                const newIndex = historyIndex + 1
+                setHistoryIndex(newIndex)
+                setCommand(commandHistory[commandHistory.length - 1 - newIndex])
+            }
+        } else if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            if (historyIndex > 0) {
+                const newIndex = historyIndex - 1
+                setHistoryIndex(newIndex)
+                setCommand(commandHistory[commandHistory.length - 1 - newIndex])
+            } else if (historyIndex === 0) {
+                setHistoryIndex(-1)
+                setCommand('')
+            }
+        }
+    }
+
     // Send command
     const sendCommand = async (e?: React.FormEvent) => {
         if (e) e.preventDefault()
@@ -139,7 +171,9 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
 
         const cmd = command.trim()
         setCommand('')
-        setConsoleLogs(prev => [...prev, `\x1b[36m> ${cmd}\x1b[0m`])
+        setHistoryIndex(-1)
+        setCommandHistory(prev => [...prev, cmd])
+        setConsoleLogs(prev => [...prev, `\x1b[36m$ ${cmd}\x1b[0m`])
 
         try {
             const response = await fetch(`/api/servers/${identifier}/console`, {
@@ -149,20 +183,22 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
             })
 
             if (response.ok) {
-                setConsoleLogs(prev => [...prev, '\x1b[32m[Dragohost] Command sent successfully\x1b[0m'])
+                setConsoleLogs(prev => [...prev, '\x1b[32m✓ Command sent successfully\x1b[0m'])
             } else {
                 const error = await response.json()
-                setConsoleLogs(prev => [...prev, `\x1b[31m[Error] ${error.error}\x1b[0m`])
+                setConsoleLogs(prev => [...prev, `\x1b[31m✗ ${error.error}\x1b[0m`])
             }
         } catch (error) {
-            setConsoleLogs(prev => [...prev, '\x1b[31m[Error] Failed to send command\x1b[0m'])
+            setConsoleLogs(prev => [...prev, '\x1b[31m✗ Failed to send command\x1b[0m'])
         }
+
+        inputRef.current?.focus()
     }
 
     // Power actions
     const handlePowerAction = async (action: 'start' | 'stop' | 'restart' | 'kill') => {
         setPowerAction(action)
-        setConsoleLogs(prev => [...prev, `\x1b[33m[Dragohost] Sending ${action} signal...\x1b[0m`])
+        setConsoleLogs(prev => [...prev, `\x1b[33m⏳ Sending ${action} signal...\x1b[0m`])
 
         try {
             const response = await fetch(`/api/servers/${identifier}/power`, {
@@ -172,264 +208,282 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
             })
 
             if (response.ok) {
-                setConsoleLogs(prev => [...prev, `\x1b[32m[Dragohost] ${action.charAt(0).toUpperCase() + action.slice(1)} signal sent\x1b[0m`])
+                setConsoleLogs(prev => [...prev, `\x1b[32m✓ ${action.charAt(0).toUpperCase() + action.slice(1)} signal sent\x1b[0m`])
             } else {
                 const error = await response.json()
-                setConsoleLogs(prev => [...prev, `\x1b[31m[Error] ${error.error}\x1b[0m`])
+                setConsoleLogs(prev => [...prev, `\x1b[31m✗ ${error.error}\x1b[0m`])
             }
         } catch (error) {
-            setConsoleLogs(prev => [...prev, '\x1b[31m[Error] Power action failed\x1b[0m'])
+            setConsoleLogs(prev => [...prev, '\x1b[31m✗ Power action failed\x1b[0m'])
         } finally {
             setPowerAction(null)
         }
     }
 
-    // Status colors
-    const getStatusColor = (state: string) => {
+    // Status info
+    const getStatusInfo = (state: string) => {
         switch (state) {
-            case 'running': return 'text-green-400'
-            case 'starting': return 'text-yellow-400'
-            case 'stopping': return 'text-orange-400'
-            default: return 'text-red-400'
+            case 'running': return { color: 'text-green-400', bg: 'bg-green-500', label: 'RUNNING' }
+            case 'starting': return { color: 'text-yellow-400', bg: 'bg-yellow-500', label: 'STARTING' }
+            case 'stopping': return { color: 'text-orange-400', bg: 'bg-orange-500', label: 'STOPPING' }
+            default: return { color: 'text-red-400', bg: 'bg-red-500', label: 'OFFLINE' }
         }
     }
 
-    const getStatusBg = (state: string) => {
-        switch (state) {
-            case 'running': return 'bg-green-500'
-            case 'starting': return 'bg-yellow-500'
-            case 'stopping': return 'bg-orange-500'
-            default: return 'bg-red-500'
-        }
-    }
+    const statusInfo = getStatusInfo(serverState)
 
     return (
-        <div className="flex flex-col lg:flex-row gap-4 h-full">
+        <div className="flex flex-col lg:flex-row gap-6 p-6">
             {/* Main Console */}
-            <div className="flex-1 flex flex-col bg-[#0a0a0a] rounded-xl border border-white/5 overflow-hidden min-h-[500px]">
+            <div className="flex-1 flex flex-col min-h-[600px]">
                 {/* Console Header */}
-                <div className="flex items-center justify-between px-4 py-2 bg-white/5 border-b border-white/5">
-                    <div className="flex items-center gap-3">
-                        <TerminalIcon className="w-4 h-4 text-gray-400" />
-                        <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Console</span>
-                        <div className="flex items-center gap-1.5">
+                <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-[#0a0a0a] to-[#0f0f0f] rounded-t-xl border border-white/5 border-b-0">
+                    <div className="flex items-center gap-4">
+                        <div className="flex items-center gap-2">
+                            <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                            <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                            <div className="w-3 h-3 rounded-full bg-green-500/80" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <TerminalIcon className="w-4 h-4 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-400">Console</span>
+                            <span className="text-xs text-gray-600">•</span>
                             {status === 'connected' ? (
-                                <RefreshCw className="w-3 h-3 text-green-400" />
+                                <span className="flex items-center gap-1.5 text-xs text-green-400">
+                                    <Activity className="w-3 h-3" />
+                                    Live
+                                </span>
                             ) : status === 'polling' ? (
-                                <Loader2 className="w-3 h-3 animate-spin text-cyan-400" />
+                                <span className="flex items-center gap-1.5 text-xs text-cyan-400">
+                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                    Connecting
+                                </span>
                             ) : (
-                                <WifiOff className="w-3 h-3 text-red-400" />
+                                <span className="flex items-center gap-1.5 text-xs text-red-400">
+                                    <WifiOff className="w-3 h-3" />
+                                    Error
+                                </span>
                             )}
-                            <span className={`text-[10px] font-bold uppercase ${status === 'connected' ? 'text-green-400' :
-                                status === 'polling' ? 'text-cyan-400' : 'text-red-400'
-                                }`}>
-                                {status === 'connected' ? 'Live' : status}
-                            </span>
                         </div>
                     </div>
 
                     {/* Server State Badge */}
-                    <div className="flex items-center gap-2">
-                        <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full ${getStatusBg(serverState)}/20`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${getStatusBg(serverState)} animate-pulse`} />
-                            <span className={`text-[10px] font-bold uppercase ${getStatusColor(serverState)}`}>
-                                {serverState}
-                            </span>
-                        </div>
+                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full ${statusInfo.bg}/20`}>
+                        <span className={`w-2 h-2 rounded-full ${statusInfo.bg} animate-pulse`} />
+                        <span className={`text-xs font-bold tracking-wider ${statusInfo.color}`}>
+                            {statusInfo.label}
+                        </span>
                     </div>
                 </div>
 
                 {/* Console Output */}
                 <div
                     ref={consoleRef}
-                    className="flex-1 p-3 overflow-auto font-mono text-sm text-gray-300 bg-[#0a0a0a] scrollbar-thin scrollbar-thumb-white/10"
-                    style={{ maxHeight: '400px' }}
+                    className="flex-1 p-4 overflow-auto font-mono text-sm leading-relaxed bg-[#0a0a0a] border-x border-white/5 scrollbar-thin scrollbar-thumb-white/10"
+                    style={{ minHeight: '400px' }}
+                    onClick={() => inputRef.current?.focus()}
                 >
                     {consoleLogs.map((log, i) => (
                         <div
                             key={i}
-                            className="whitespace-pre-wrap break-all leading-relaxed"
+                            className="whitespace-pre-wrap break-all text-gray-300"
                             dangerouslySetInnerHTML={{ __html: parseAnsi(log) }}
                         />
                     ))}
                 </div>
 
                 {/* Command Input */}
-                <form onSubmit={sendCommand} className="p-3 bg-white/5 border-t border-white/5 flex gap-2">
-                    <div className="flex-1 relative">
-                        <div className="absolute inset-y-0 left-3 flex items-center text-cyan-500">
-                            <span className="font-mono text-sm">$</span>
-                        </div>
+                <form onSubmit={sendCommand} className="relative">
+                    <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-[#0a0a0a] to-[#0f0f0f] rounded-b-xl border border-white/5 border-t-0">
+                        <ChevronRight className="w-4 h-4 text-cyan-500" />
                         <input
+                            ref={inputRef}
                             type="text"
                             value={command}
                             onChange={(e) => setCommand(e.target.value)}
-                            placeholder="Type a command..."
+                            onKeyDown={handleKeyDown}
+                            placeholder={serverState === 'running' ? 'Type a command...' : 'Server is offline'}
                             disabled={serverState !== 'running'}
-                            className="w-full bg-black/40 border border-white/5 rounded-lg pl-8 pr-4 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all font-mono disabled:opacity-50"
+                            className="flex-1 bg-transparent text-white placeholder-gray-600 focus:outline-none font-mono text-sm disabled:opacity-50"
                         />
+                        <button
+                            type="submit"
+                            disabled={!command.trim() || serverState !== 'running'}
+                            className="p-2 rounded-lg bg-cyan-500/10 text-cyan-400 hover:bg-cyan-500/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                        >
+                            <Send className="w-4 h-4" />
+                        </button>
                     </div>
-                    <button
-                        type="submit"
-                        disabled={!command.trim() || serverState !== 'running'}
-                        className="p-2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                        <Send className="w-4 h-4" />
-                    </button>
                 </form>
             </div>
 
-            {/* Sidebar - Resources & Controls */}
-            <div className="w-full lg:w-72 flex flex-col gap-4">
+            {/* Sidebar */}
+            <div className="lg:w-80 flex flex-col gap-5">
                 {/* Power Controls */}
-                <div className="card p-4">
-                    <h3 className="text-sm font-medium text-gray-400 mb-3">Power Controls</h3>
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-white/[0.03] to-transparent border border-white/5">
+                    <h3 className="text-sm font-medium text-gray-400 mb-4 flex items-center gap-2">
+                        <Power className="w-4 h-4" />
+                        Power Controls
+                    </h3>
                     <div className="grid grid-cols-4 gap-2">
-                        <button
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
                             onClick={() => handlePowerAction('start')}
                             disabled={powerAction !== null || serverState === 'running'}
-                            className="flex flex-col items-center gap-1 p-2 rounded-lg bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            className="flex flex-col items-center gap-2 p-3 rounded-xl bg-green-500/10 text-green-400 hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all border border-green-500/20"
                         >
-                            {powerAction === 'start' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
+                            {powerAction === 'start' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Power className="w-5 h-5" />}
                             <span className="text-[10px] font-medium">Start</span>
-                        </button>
-                        <button
+                        </motion.button>
+
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
                             onClick={() => handlePowerAction('restart')}
                             disabled={powerAction !== null || serverState !== 'running'}
-                            className="flex flex-col items-center gap-1 p-2 rounded-lg bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            className="flex flex-col items-center gap-2 p-3 rounded-xl bg-yellow-500/10 text-yellow-400 hover:bg-yellow-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all border border-yellow-500/20"
                         >
-                            {powerAction === 'restart' ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCw className="w-4 h-4" />}
+                            {powerAction === 'restart' ? <Loader2 className="w-5 h-5 animate-spin" /> : <RotateCw className="w-5 h-5" />}
                             <span className="text-[10px] font-medium">Restart</span>
-                        </button>
-                        <button
+                        </motion.button>
+
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
                             onClick={() => handlePowerAction('stop')}
                             disabled={powerAction !== null || serverState === 'offline'}
-                            className="flex flex-col items-center gap-1 p-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            className="flex flex-col items-center gap-2 p-3 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all border border-red-500/20"
                         >
-                            {powerAction === 'stop' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Square className="w-4 h-4" />}
+                            {powerAction === 'stop' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Square className="w-5 h-5" />}
                             <span className="text-[10px] font-medium">Stop</span>
-                        </button>
-                        <button
+                        </motion.button>
+
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
                             onClick={() => handlePowerAction('kill')}
                             disabled={powerAction !== null || serverState === 'offline'}
-                            className="flex flex-col items-center gap-1 p-2 rounded-lg bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                            className="flex flex-col items-center gap-2 p-3 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all border border-rose-500/20"
                         >
-                            {powerAction === 'kill' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Skull className="w-4 h-4" />}
+                            {powerAction === 'kill' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Skull className="w-5 h-5" />}
                             <span className="text-[10px] font-medium">Kill</span>
-                        </button>
+                        </motion.button>
                     </div>
                 </div>
 
                 {/* Resource Stats */}
-                <div className="card p-4 flex flex-col gap-3">
-                    <h3 className="text-sm font-medium text-gray-400">Resources</h3>
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-white/[0.03] to-transparent border border-white/5">
+                    <h3 className="text-sm font-medium text-gray-400 mb-4 flex items-center gap-2">
+                        <Activity className="w-4 h-4" />
+                        Resources
+                    </h3>
 
-                    {/* CPU */}
-                    <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-1.5 text-gray-400">
-                                <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-                                <span>CPU</span>
+                    <div className="space-y-4">
+                        {/* CPU */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2 text-gray-400">
+                                    <Cpu className="w-4 h-4 text-cyan-400" />
+                                    <span>CPU</span>
+                                </div>
+                                <span className="text-white font-medium">{resources.cpu.toFixed(1)}%</span>
                             </div>
-                            <span className="text-white font-medium">{resources.cpu.toFixed(1)}%</span>
+                            <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                                <motion.div
+                                    className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-full"
+                                    animate={{ width: `${Math.min(resources.cpu, 100)}%` }}
+                                    transition={{ duration: 0.3 }}
+                                />
+                            </div>
                         </div>
-                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <motion.div
-                                className="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-full"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${Math.min(resources.cpu, 100)}%` }}
-                                transition={{ duration: 0.3 }}
-                            />
+
+                        {/* Memory */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2 text-gray-400">
+                                    <MemoryStick className="w-4 h-4 text-purple-400" />
+                                    <span>Memory</span>
+                                </div>
+                                <span className="text-white font-medium text-xs">
+                                    {formatBytes(resources.memory)} / {formatBytes(limits.memory * 1024 * 1024)}
+                                </span>
+                            </div>
+                            <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                                <motion.div
+                                    className="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded-full"
+                                    animate={{ width: `${Math.min((resources.memory / (limits.memory * 1024 * 1024)) * 100, 100)}%` }}
+                                    transition={{ duration: 0.3 }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Disk */}
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2 text-gray-400">
+                                    <HardDrive className="w-4 h-4 text-blue-400" />
+                                    <span>Disk</span>
+                                </div>
+                                <span className="text-white font-medium text-xs">
+                                    {formatBytes(resources.disk)} / {formatBytes(limits.disk * 1024 * 1024)}
+                                </span>
+                            </div>
+                            <div className="h-2 bg-white/5 rounded-full overflow-hidden">
+                                <motion.div
+                                    className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full"
+                                    animate={{ width: `${Math.min((resources.disk / (limits.disk * 1024 * 1024)) * 100, 100)}%` }}
+                                    transition={{ duration: 0.3 }}
+                                />
+                            </div>
                         </div>
                     </div>
 
-                    {/* Memory */}
-                    <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-1.5 text-gray-400">
-                                <MemoryStick className="w-3.5 h-3.5 text-purple-400" />
-                                <span>Memory</span>
+                    {/* Network & Uptime */}
+                    <div className="mt-5 pt-4 border-t border-white/5 space-y-3">
+                        <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2 text-gray-400">
+                                <Network className="w-4 h-4 text-green-400" />
+                                <span>Network</span>
+                            </div>
+                            <div className="text-xs">
+                                <span className="text-green-400">↑{formatBytes(resources.networkTx)}</span>
+                                <span className="text-gray-600 mx-1">/</span>
+                                <span className="text-blue-400">↓{formatBytes(resources.networkRx)}</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-sm">
+                            <div className="flex items-center gap-2 text-gray-400">
+                                <Clock className="w-4 h-4 text-yellow-400" />
+                                <span>Uptime</span>
                             </div>
                             <span className="text-white font-medium">
-                                {formatBytes(resources.memory)} / {formatBytes(limits.memory * 1024 * 1024)}
+                                {resources.uptime > 0 ? formatUptime(resources.uptime) : 'Offline'}
                             </span>
                         </div>
-                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <motion.div
-                                className="h-full bg-gradient-to-r from-purple-500 to-purple-400 rounded-full"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${Math.min((resources.memory / (limits.memory * 1024 * 1024)) * 100, 100)}%` }}
-                                transition={{ duration: 0.3 }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Disk */}
-                    <div className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                            <div className="flex items-center gap-1.5 text-gray-400">
-                                <HardDrive className="w-3.5 h-3.5 text-blue-400" />
-                                <span>Disk</span>
-                            </div>
-                            <span className="text-white font-medium">
-                                {formatBytes(resources.disk)} / {formatBytes(limits.disk * 1024 * 1024)}
-                            </span>
-                        </div>
-                        <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <motion.div
-                                className="h-full bg-gradient-to-r from-blue-500 to-blue-400 rounded-full"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${Math.min((resources.disk / (limits.disk * 1024 * 1024)) * 100, 100)}%` }}
-                                transition={{ duration: 0.3 }}
-                            />
-                        </div>
-                    </div>
-
-                    {/* Network */}
-                    <div className="flex items-center justify-between text-xs border-t border-white/5 pt-3">
-                        <div className="flex items-center gap-1.5 text-gray-400">
-                            <Network className="w-3.5 h-3.5 text-green-400" />
-                            <span>Network</span>
-                        </div>
-                        <div className="text-white font-medium text-[10px]">
-                            <span className="text-green-400">↑{formatBytes(resources.networkTx)}</span>
-                            {' / '}
-                            <span className="text-blue-400">↓{formatBytes(resources.networkRx)}</span>
-                        </div>
-                    </div>
-
-                    {/* Uptime */}
-                    <div className="flex items-center justify-between text-xs border-t border-white/5 pt-3">
-                        <div className="flex items-center gap-1.5 text-gray-400">
-                            <Clock className="w-3.5 h-3.5 text-yellow-400" />
-                            <span>Uptime</span>
-                        </div>
-                        <span className="text-white font-medium">
-                            {resources.uptime > 0 ? formatUptime(resources.uptime) : 'Offline'}
-                        </span>
                     </div>
                 </div>
 
-                {/* Mini Resource Graph */}
-                {resourceHistory.length > 5 && (
-                    <div className="card p-4">
-                        <h3 className="text-sm font-medium text-gray-400 mb-3">CPU History</h3>
-                        <div className="h-16 relative flex items-end gap-0.5">
+                {/* CPU History Graph */}
+                {resourceHistory.length > 10 && (
+                    <div className="p-5 rounded-2xl bg-gradient-to-br from-white/[0.03] to-transparent border border-white/5">
+                        <h3 className="text-sm font-medium text-gray-400 mb-4">CPU History</h3>
+                        <div className="h-20 relative flex items-end gap-[2px]">
                             <AnimatePresence mode="popLayout">
                                 {resourceHistory.slice(-30).map((point, i) => (
                                     <motion.div
                                         key={point.time}
                                         initial={{ height: 0, opacity: 0 }}
-                                        animate={{ height: `${Math.max(point.cpu, 2)}%`, opacity: 1 }}
+                                        animate={{ height: `${Math.max(point.cpu, 3)}%`, opacity: 1 }}
                                         exit={{ opacity: 0 }}
-                                        className="flex-1 bg-gradient-to-t from-cyan-500/50 to-cyan-400/30 rounded-t"
-                                        style={{ minWidth: '2px' }}
+                                        className="flex-1 bg-gradient-to-t from-cyan-500/60 to-cyan-400/30 rounded-t"
                                     />
                                 ))}
                             </AnimatePresence>
                         </div>
-                        <div className="flex justify-between text-[10px] text-gray-500 mt-1">
-                            <span>60s ago</span>
+                        <div className="flex justify-between text-[10px] text-gray-600 mt-2">
+                            <span>30s ago</span>
                             <span>Now</span>
                         </div>
                     </div>
