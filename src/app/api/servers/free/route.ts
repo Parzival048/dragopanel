@@ -19,11 +19,45 @@ export async function POST(request: NextRequest) {
         const body = await request.json()
         const { serverName, eggId, version } = body
 
+        if (!serverName || !eggId) {
+            return NextResponse.json(
+                { error: 'Server name and egg ID are required' },
+                { status: 400 }
+            )
+        }
+
+        // Ensure the free plan exists in the database (create if not)
+        let freePlan = await prisma.plan.findUnique({
+            where: { slug: 'free' }
+        })
+
+        if (!freePlan) {
+            freePlan = await prisma.plan.create({
+                data: {
+                    name: 'Free',
+                    slug: 'free',
+                    description: 'Try out our platform for free',
+                    price: 0,
+                    currency: 'INR',
+                    memory: 1024,
+                    disk: 5120,
+                    cpu: 50,
+                    databases: 1,
+                    backups: 1,
+                    allocations: 1,
+                    isPopular: false,
+                    isActive: true,
+                    features: ['DDoS Protection', '24/7 Uptime', 'Basic Support'],
+                    sortOrder: 0
+                }
+            })
+        }
+
         // Check if user already has a free server
         const existingFreeServer = await prisma.server.findFirst({
             where: {
                 userId: session.user.id,
-                planId: 'free',
+                planId: freePlan.id,
                 status: { notIn: ['DELETED'] }
             }
         })
@@ -35,23 +69,31 @@ export async function POST(request: NextRequest) {
             )
         }
 
-        // Free plan configuration
-        const freePlan = {
-            id: 'free',
-            memory: 1024,
-            disk: 5120,
-            cpu: 50,
-            databases: 1,
-            backups: 1,
-            allocations: 1
-        }
-
         // Find available allocation
         const nodeId = 1 // Default node
-        const allocationId = await pterodactyl.findAvailableAllocation(nodeId)
+        let allocationId: number
+
+        try {
+            allocationId = await pterodactyl.findAvailableAllocation(nodeId)
+        } catch (allocError) {
+            console.error('Failed to find allocation:', allocError)
+            return NextResponse.json(
+                { error: 'No available server slots. Please try again later.' },
+                { status: 503 }
+            )
+        }
 
         // Get egg details
-        const eggData = await pterodactyl.getEgg(1, eggId) // Nest 1 for Minecraft
+        let eggData
+        try {
+            eggData = await pterodactyl.getEgg(1, eggId) // Nest 1 for Minecraft
+        } catch (eggError) {
+            console.error('Failed to get egg:', eggError)
+            return NextResponse.json(
+                { error: 'Invalid server type selected.' },
+                { status: 400 }
+            )
+        }
 
         // Get or create Pterodactyl user
         let pterodactylUserId = 1
@@ -59,40 +101,62 @@ export async function POST(request: NextRequest) {
             const searchResponse = await pterodactyl.getUserByEmail(session.user.email!)
             if (searchResponse.data && searchResponse.data.length > 0) {
                 pterodactylUserId = searchResponse.data[0].attributes.id
+            } else {
+                // Create user in Pterodactyl if not found
+                const newUser = await pterodactyl.createUser({
+                    email: session.user.email!,
+                    username: session.user.email!.split('@')[0] + Math.random().toString(36).substring(2, 7),
+                    first_name: session.user.name?.split(' ')[0] || 'User',
+                    last_name: session.user.name?.split(' ').slice(1).join(' ') || 'Player',
+                })
+                pterodactylUserId = newUser.attributes.id
             }
         } catch (e) {
-            console.error('Failed to find Pterodactyl user:', e)
+            console.error('Failed to find/create Pterodactyl user:', e)
+            return NextResponse.json(
+                { error: 'Failed to set up user account. Please try again.' },
+                { status: 500 }
+            )
         }
 
         // Create server on Pterodactyl
-        const pterodactylServer = await pterodactyl.createServer({
-            name: serverName,
-            user: pterodactylUserId,
-            egg: eggId,
-            docker_image: eggData.attributes.docker_image,
-            startup: eggData.attributes.startup,
-            environment: {
-                SERVER_JARFILE: 'server.jar',
-                VERSION: version || 'latest',
-                BUILD_TYPE: 'recommended'
-            },
-            limits: {
-                memory: freePlan.memory,
-                swap: 0,
-                disk: freePlan.disk,
-                io: 500,
-                cpu: freePlan.cpu
-            },
-            feature_limits: {
-                databases: freePlan.databases,
-                allocations: freePlan.allocations,
-                backups: freePlan.backups
-            },
-            allocation: {
-                default: allocationId
-            },
-            start_on_completion: true
-        })
+        let pterodactylServer
+        try {
+            pterodactylServer = await pterodactyl.createServer({
+                name: serverName,
+                user: pterodactylUserId,
+                egg: eggId,
+                docker_image: eggData.attributes.docker_image,
+                startup: eggData.attributes.startup,
+                environment: {
+                    SERVER_JARFILE: 'server.jar',
+                    VERSION: version || 'latest',
+                    BUILD_TYPE: 'recommended'
+                },
+                limits: {
+                    memory: freePlan.memory,
+                    swap: 0,
+                    disk: freePlan.disk,
+                    io: 500,
+                    cpu: freePlan.cpu
+                },
+                feature_limits: {
+                    databases: freePlan.databases,
+                    allocations: freePlan.allocations,
+                    backups: freePlan.backups
+                },
+                allocation: {
+                    default: allocationId
+                },
+                start_on_completion: true
+            })
+        } catch (serverError) {
+            console.error('Failed to create Pterodactyl server:', serverError)
+            return NextResponse.json(
+                { error: 'Failed to provision server. Please try again.' },
+                { status: 500 }
+            )
+        }
 
         const serverAttributes = pterodactylServer.attributes
 
@@ -108,7 +172,7 @@ export async function POST(request: NextRequest) {
                 identifier: serverAttributes.identifier,
                 uuid: serverAttributes.uuid,
                 userId: session.user.id,
-                planId: 'free',
+                planId: freePlan.id,
                 eggId,
                 eggName: eggData.attributes.name,
                 nodeId,
