@@ -305,7 +305,15 @@ export default function ServerDetailPage({ params }: { params: Promise<{ id: str
                     className="card min-h-[500px]"
                 >
                     {activeTab === 'console' && (
-                        <Console serverId={server.id} identifier={server.identifier} />
+                        <Console
+                            serverId={server.id}
+                            identifier={server.identifier}
+                            limits={{
+                                memory: server.plan.memory,
+                                disk: server.plan.disk,
+                                cpu: server.plan.cpu
+                            }}
+                        />
                     )}
 
                     {activeTab === 'files' && (
