@@ -271,8 +271,8 @@ export function Pricing() {
                             viewport={{ once: true }}
                             transition={{ delay: index * 0.1 }}
                             className={`relative flex flex-col p-8 rounded-[2rem] transition-all duration-500 hover:-translate-y-3 ${plan.popular
-                                    ? 'bg-gradient-to-b from-[#0d1c2a] to-bg-primary border-2 border-cyan-500/50 shadow-[0_0_50px_rgba(6,182,212,0.15)] scale-105 z-20'
-                                    : 'bg-white/[0.03] border border-white/[0.08] hover:border-white/20 z-10'
+                                ? 'bg-gradient-to-b from-[#0d1c2a] to-bg-primary border-2 border-cyan-500/50 shadow-[0_0_50px_rgba(6,182,212,0.15)] scale-105 z-20'
+                                : 'bg-white/[0.03] border border-white/[0.08] hover:border-white/20 z-10'
                                 }`}
                         >
                             {plan.popular && (
@@ -308,8 +308,8 @@ export function Pricing() {
                             <Link
                                 href="/register"
                                 className={`w-full py-4 px-6 rounded-2xl font-black transition-all duration-300 text-center ${plan.popular
-                                        ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/20'
-                                        : 'bg-white/5 text-white hover:bg-white/10 hover:border-white/20'
+                                    ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white hover:from-cyan-400 hover:to-blue-500 shadow-lg shadow-cyan-500/20'
+                                    : 'bg-white/5 text-white hover:bg-white/10 hover:border-white/20'
                                     }`}
                             >
                                 Select Plan
@@ -402,8 +402,9 @@ export function Footer() {
                     <div className="col-span-2 sm:col-span-1">
                         <h4 className="font-bold text-white mb-6 uppercase tracking-widest text-xs">Legal</h4>
                         <ul className="space-y-4">
-                            <li><Link href="/terms" className="text-gray-500 hover:text-cyan-400 transition-colors font-medium">Terms</Link></li>
-                            <li><Link href="/privacy" className="text-gray-500 hover:text-cyan-400 transition-colors font-medium">Privacy</Link></li>
+                            <li><Link href="/terms" className="text-gray-500 hover:text-cyan-400 transition-colors font-medium">Terms of Service</Link></li>
+                            <li><Link href="/privacy-policy" className="text-gray-500 hover:text-cyan-400 transition-colors font-medium">Privacy Policy</Link></li>
+                            <li><Link href="/refund-policy" className="text-gray-500 hover:text-cyan-400 transition-colors font-medium">Refund Policy</Link></li>
                         </ul>
                     </div>
                 </div>
