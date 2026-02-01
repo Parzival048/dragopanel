@@ -204,7 +204,7 @@ export default function RegisterPage() {
                             By creating an account, you agree to our{' '}
                             <Link href="/terms" className="text-cyan-400 hover:text-cyan-300 transition-colors">Terms of Service</Link>
                             {' '}and{' '}
-                            <Link href="/privacy" className="text-cyan-400 hover:text-cyan-300 transition-colors">Privacy Policy</Link>.
+                            <Link href="/privacy-policy" className="text-cyan-400 hover:text-cyan-300 transition-colors">Privacy Policy</Link>.
                         </p>
 
                         {/* Submit Button */}
