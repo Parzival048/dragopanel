@@ -152,8 +152,9 @@ export async function POST(request: NextRequest) {
             })
         } catch (serverError) {
             console.error('Failed to create Pterodactyl server:', serverError)
+            const detail = serverError instanceof Error ? serverError.message : 'Unknown provisioning error'
             return NextResponse.json(
-                { error: 'Failed to provision server. Please try again.' },
+                { error: `Failed to provision server: ${detail}` },
                 { status: 500 }
             )
         }
