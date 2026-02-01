@@ -97,7 +97,7 @@ export async function GET() {
         }
 
         return NextResponse.json({
-            plans: plans.map(plan => ({
+            plans: plans.map((plan: typeof plans[number]) => ({
                 id: plan.id,
                 name: plan.name,
                 slug: plan.slug,

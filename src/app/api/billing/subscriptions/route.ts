@@ -29,7 +29,7 @@ export async function GET() {
 
         // Fetch server data for each subscription if serverId exists
         const subscriptionsWithServers = await Promise.all(
-            subscriptions.map(async (sub) => {
+            subscriptions.map(async (sub: typeof subscriptions[number]) => {
                 let serverData = null
                 if (sub.serverId) {
                     const server = await prisma.server.findUnique({

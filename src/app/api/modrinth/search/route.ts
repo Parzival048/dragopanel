@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
         })
 
         return NextResponse.json({
-            plugins: result.hits.map(hit => ({
+            plugins: result.hits.map((hit: typeof result.hits[number]) => ({
                 slug: hit.slug,
                 title: hit.title,
                 description: hit.description,

@@ -134,7 +134,7 @@ export async function GET() {
         }
 
         return NextResponse.json({
-            eggs: eggs.map(egg => ({
+            eggs: eggs.map((egg: typeof eggs[number]) => ({
                 id: egg.eggId,
                 name: egg.name,
                 description: egg.description,
