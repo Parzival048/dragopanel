@@ -136,7 +136,33 @@ export default function CreateServerPage() {
 
         setIsCreating(true)
         try {
-            // Create payment order first
+            // Check if it's a free plan (price = 0)
+            if (selectedPlan.price === 0) {
+                // Create free server directly without payment
+                const freeServerRes = await fetch('/api/servers/free', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        serverName: serverName.trim(),
+                        eggId: selectedEgg.id,
+                        version: selectedVersion
+                    })
+                })
+
+                const freeServerData = await freeServerRes.json()
+
+                if (!freeServerRes.ok) {
+                    alert(freeServerData.error || 'Failed to create free server')
+                    setIsCreating(false)
+                    return
+                }
+
+                // Redirect to the new server
+                router.push(`/dashboard/servers/${freeServerData.server.id}`)
+                return
+            }
+
+            // Create payment order for paid plans
             const paymentRes = await fetch('/api/payments/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -156,8 +182,8 @@ export default function CreateServerPage() {
             const { paymentSessionId, mode, paymentUrl } = paymentData
 
             // Initialize and trigger Cashfree SDK for professional integration
-            if ((window as any).Cashfree) {
-                const cashfree = (window as any).Cashfree({
+            if ((window as unknown as { Cashfree?: (config: { mode: string }) => { checkout: (options: { paymentSessionId: string; redirectTarget: string }) => void } }).Cashfree) {
+                const cashfree = (window as unknown as { Cashfree: (config: { mode: string }) => { checkout: (options: { paymentSessionId: string; redirectTarget: string }) => void } }).Cashfree({
                     mode: mode // 'sandbox' or 'production'
                 });
 

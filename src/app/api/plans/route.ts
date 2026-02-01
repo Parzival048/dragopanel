@@ -14,6 +14,26 @@ export async function GET() {
         if (plans.length === 0) {
             plans = [
                 {
+                    id: 'free',
+                    name: 'Free',
+                    slug: 'free',
+                    description: 'Try out our platform for free',
+                    price: 0 as unknown as typeof plans[0]['price'],
+                    currency: 'INR',
+                    memory: 1024,
+                    disk: 5120,
+                    cpu: 50,
+                    databases: 1,
+                    backups: 1,
+                    allocations: 1,
+                    isPopular: false,
+                    isActive: true,
+                    features: ['DDoS Protection', '24/7 Uptime', 'Basic Support'],
+                    sortOrder: 0,
+                    createdAt: new Date(),
+                    updatedAt: new Date()
+                },
+                {
                     id: 'starter',
                     name: 'Starter',
                     slug: 'starter',
