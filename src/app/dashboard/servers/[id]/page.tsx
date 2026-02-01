@@ -28,6 +28,7 @@ import FileManager from '@/components/server/FileManager'
 import PluginManager from '@/components/server/PluginManager'
 import PlayerManager from '@/components/server/PlayerManager'
 import ServerSettings from '@/components/server/ServerSettings'
+import Console from '@/components/server/Console'
 import { formatBytes } from '@/lib/utils'
 
 interface ServerData {
@@ -131,14 +132,15 @@ export default function ServerDetailPage({ params }: { params: Promise<{ id: str
         }
     }
 
-    // Get status color
-    const getStatusColor = (status: string) => {
+    // Get status color and display name
+    const getStatusInfo = (status: string) => {
         switch (status.toLowerCase()) {
-            case 'running': return 'bg-green-500'
-            case 'starting': return 'bg-yellow-500'
-            case 'stopping': return 'bg-orange-500'
-            case 'offline': return 'bg-gray-500'
-            default: return 'bg-gray-500'
+            case 'running': return { color: 'bg-green-500', label: 'Running' }
+            case 'starting': return { color: 'bg-yellow-500', label: 'Starting' }
+            case 'stopping': return { color: 'bg-orange-500', label: 'Stopping' }
+            case 'offline': return { color: 'bg-red-500', label: 'Offline' }
+            case 'installing': return { color: 'bg-blue-500', label: 'Installing' }
+            default: return { color: 'bg-gray-500', label: status || 'Unknown' }
         }
     }
 
@@ -185,8 +187,8 @@ export default function ServerDetailPage({ params }: { params: Promise<{ id: str
                                 <div>
                                     <h1 className="font-semibold">{server.name}</h1>
                                     <div className="flex items-center gap-2 text-sm text-gray-500">
-                                        <span className={`w-2 h-2 rounded-full ${getStatusColor(server.status)}`} />
-                                        <span className="capitalize">{server.status.toLowerCase()}</span>
+                                        <span className={`w-2 h-2 rounded-full ${getStatusInfo(server.status).color}`} />
+                                        <span>{getStatusInfo(server.status).label}</span>
                                         {server.allocation && (
                                             <>
                                                 <span>•</span>
@@ -285,8 +287,8 @@ export default function ServerDetailPage({ params }: { params: Promise<{ id: str
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
                             className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all whitespace-nowrap ${activeTab === tab.id
-                                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
-                                    : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border border-transparent'
+                                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                                : 'bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white border border-transparent'
                                 }`}
                         >
                             <tab.icon className="w-4 h-4" />
@@ -303,10 +305,7 @@ export default function ServerDetailPage({ params }: { params: Promise<{ id: str
                     className="card min-h-[500px]"
                 >
                     {activeTab === 'console' && (
-                        <div className="p-4 h-[500px] flex items-center justify-center text-gray-500">
-                            <Terminal className="w-8 h-8 mr-2" />
-                            <span>Console view - Connect via WebSocket for live logs</span>
-                        </div>
+                        <Console serverId={server.id} identifier={server.identifier} />
                     )}
 
                     {activeTab === 'files' && (

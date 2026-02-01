@@ -55,8 +55,17 @@ export async function GET(
                 uptime: resourceData.attributes.resources.uptime
             }
             currentStatus = resourceData.attributes.current_state.toUpperCase()
-        } catch {
+
+            // Sync status to database if different and not installing
+            if (currentStatus !== server.status && server.status !== 'DELETED') {
+                await prisma.server.update({
+                    where: { id: server.id },
+                    data: { status: currentStatus as any }
+                }).catch(() => { }) // Ignore background sync errors
+            }
+        } catch (error) {
             // Failed to get resources
+            console.error('Failed to get Pterodactyl resources:', error)
         }
 
         try {

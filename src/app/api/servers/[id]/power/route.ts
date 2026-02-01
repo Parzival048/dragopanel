@@ -52,8 +52,9 @@ export async function POST(
         return NextResponse.json({ success: true, action })
     } catch (error) {
         console.error('Power action failed:', error)
+        const detail = error instanceof Error ? error.message : 'Unknown error'
         return NextResponse.json(
-            { error: 'Failed to send power action' },
+            { error: `Failed to send power action: ${detail}` },
             { status: 500 }
         )
     }
