@@ -119,6 +119,24 @@ export async function POST(request: NextRequest) {
             )
         }
 
+        // Create environment object with default values from egg variables
+        const environment: Record<string, string> = {}
+        if (eggData.attributes.relationships?.variables?.data) {
+            eggData.attributes.relationships.variables.data.forEach((variable: any) => {
+                environment[variable.attributes.env_variable] = variable.attributes.default_value || ''
+            })
+        }
+
+        // Apply specific overrides
+        environment['SERVER_JARFILE'] = 'server.jar'
+        if (version) {
+            environment['VERSION'] = version
+        }
+        // Common Minecraft variables usually named BUILD_NUMBER or DL_VERSION
+        if (environment['BUILD_NUMBER'] === '' || !environment['BUILD_NUMBER']) {
+            environment['BUILD_NUMBER'] = 'latest'
+        }
+
         // Create server on Pterodactyl
         let pterodactylServer
         try {
@@ -128,11 +146,7 @@ export async function POST(request: NextRequest) {
                 egg: eggId,
                 docker_image: eggData.attributes.docker_image,
                 startup: eggData.attributes.startup,
-                environment: {
-                    SERVER_JARFILE: 'server.jar',
-                    VERSION: version || 'latest',
-                    BUILD_TYPE: 'recommended'
-                },
+                environment,
                 limits: {
                     memory: freePlan.memory,
                     swap: 0,

@@ -86,17 +86,35 @@ export async function POST(request: NextRequest) {
                 const nodeId = 1 // Default node
                 const allocationId = await pterodactyl.findAvailableAllocation(nodeId)
 
+                // Get egg details to map required variables
+                const eggData = await pterodactyl.getEgg(1, eggId)
+
+                // Create environment object with default values from egg variables
+                const environment: Record<string, string> = {}
+                if (eggData.attributes.relationships?.variables?.data) {
+                    eggData.attributes.relationships.variables.data.forEach((variable: any) => {
+                        environment[variable.attributes.env_variable] = variable.attributes.default_value || ''
+                    })
+                }
+
+                // Apply specific overrides
+                environment['SERVER_JARFILE'] = 'server.jar'
+                if (metadata?.version) {
+                    environment['VERSION'] = metadata.version
+                }
+                // Common Minecraft variables usually named BUILD_NUMBER or DL_VERSION
+                if (environment['BUILD_NUMBER'] === '' || !environment['BUILD_NUMBER']) {
+                    environment['BUILD_NUMBER'] = 'latest'
+                }
+
                 // Create server in Pterodactyl
                 const pterodactylServer = await pterodactyl.createServer({
                     name: payment.serverName || 'Minecraft Server',
                     user: 1, // Admin user to start
                     egg: eggId,
-                    docker_image: 'ghcr.io/pterodactyl/yolks:java_17',
-                    startup: 'java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}',
-                    environment: {
-                        SERVER_JARFILE: 'server.jar',
-                        BUILD_NUMBER: 'latest'
-                    },
+                    docker_image: eggData.attributes.docker_image,
+                    startup: eggData.attributes.startup,
+                    environment,
                     limits: {
                         memory: planData.memory,
                         swap: 0,
