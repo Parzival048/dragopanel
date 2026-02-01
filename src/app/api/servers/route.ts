@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
 
         // Fetch live resource data from Pterodactyl for each server
         const serversWithResources = await Promise.all(
-            servers.map(async (server) => {
+            servers.map(async (server: typeof servers[number]) => {
                 try {
                     const resources = await pterodactyl.getServerResources(server.identifier)
                     return {
