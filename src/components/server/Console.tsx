@@ -1,10 +1,6 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Terminal } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
-import { WebLinksAddon } from 'xterm-addon-web-links'
-import 'xterm/css/xterm.css'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
     Loader2,
@@ -20,7 +16,8 @@ import {
     Square,
     Skull,
     Wifi,
-    WifiOff
+    WifiOff,
+    RefreshCw
 } from 'lucide-react'
 import { formatBytes } from '@/lib/utils'
 
@@ -44,16 +41,15 @@ interface ResourceStats {
 }
 
 export default function ServerConsole({ serverId, identifier, limits }: ServerConsoleProps) {
-    const terminalRef = useRef<HTMLDivElement>(null)
-    const xtermRef = useRef<Terminal | null>(null)
-    const fitAddonRef = useRef<FitAddon | null>(null)
-    const socketRef = useRef<WebSocket | null>(null)
-    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
-    const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+    const consoleRef = useRef<HTMLDivElement>(null)
+    const [status, setStatus] = useState<'polling' | 'connected' | 'error'>('polling')
     const [serverState, setServerState] = useState<string>('offline')
     const [command, setCommand] = useState('')
     const [powerAction, setPowerAction] = useState<string | null>(null)
+    const [consoleLogs, setConsoleLogs] = useState<string[]>([
+        '\x1b[36m[Dragohost] Console connected via API polling\x1b[0m',
+        '\x1b[33m[Dragohost] Real-time updates every 2 seconds\x1b[0m'
+    ])
     const [resources, setResources] = useState<ResourceStats>({
         cpu: 0,
         memory: 0,
@@ -75,215 +71,99 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
         return `${minutes}m ${seconds % 60}s`
     }
 
-    // Connect to WebSocket
-    const connect = useCallback(async () => {
-        if (!terminalRef.current) return
+    // Parse ANSI codes for display
+    const parseAnsi = (text: string) => {
+        // Simple ANSI to HTML conversion
+        return text
+            .replace(/\x1b\[36m/g, '<span class="text-cyan-400">')
+            .replace(/\x1b\[32m/g, '<span class="text-green-400">')
+            .replace(/\x1b\[33m/g, '<span class="text-yellow-400">')
+            .replace(/\x1b\[31m/g, '<span class="text-red-400">')
+            .replace(/\x1b\[0m/g, '</span>')
+    }
 
-        // Initialize terminal if not already
-        if (!xtermRef.current) {
-            const term = new Terminal({
-                cursorBlink: true,
-                fontSize: 13,
-                fontFamily: 'JetBrains Mono, Menlo, Monaco, Consolas, monospace',
-                theme: {
-                    background: '#0a0a0a',
-                    foreground: '#e4e4e7',
-                    cursor: '#22d3ee',
-                    selectionBackground: 'rgba(34, 211, 238, 0.3)',
-                    black: '#18181b',
-                    red: '#ef4444',
-                    green: '#22c55e',
-                    yellow: '#eab308',
-                    blue: '#3b82f6',
-                    magenta: '#a855f7',
-                    cyan: '#22d3ee',
-                    white: '#f4f4f5',
-                },
-                allowProposedApi: true,
-                scrollback: 5000
-            })
-
-            const fitAddon = new FitAddon()
-            term.loadAddon(fitAddon)
-            term.loadAddon(new WebLinksAddon())
-            term.open(terminalRef.current)
-            fitAddon.fit()
-
-            xtermRef.current = term
-            fitAddonRef.current = fitAddon
-        }
-
-        const term = xtermRef.current
-        term.writeln('\x1b[36m[Dragohost] Connecting to server console...\x1b[0m')
-        setStatus('connecting')
-
+    // Fetch resources via polling
+    const fetchResources = useCallback(async () => {
         try {
-            const response = await fetch(`/api/servers/${identifier}/console`)
-            if (!response.ok) {
-                const error = await response.json()
-                throw new Error(error.error || 'Failed to get credentials')
-            }
-
-            const { socket: socketUrl, token } = await response.json()
-
-            // Close existing connection
-            if (socketRef.current) {
-                socketRef.current.close()
-            }
-
-            const ws = new WebSocket(socketUrl)
-            socketRef.current = ws
-
-            ws.onopen = () => {
+            const response = await fetch(`/api/servers/${identifier}/resources`)
+            if (response.ok) {
+                const data = await response.json()
+                setServerState(data.state || 'offline')
+                setResources({
+                    cpu: data.resources.cpu || 0,
+                    memory: data.resources.memory || 0,
+                    disk: data.resources.disk || 0,
+                    networkRx: data.resources.networkRx || 0,
+                    networkTx: data.resources.networkTx || 0,
+                    uptime: data.resources.uptime || 0
+                })
                 setStatus('connected')
-                ws.send(JSON.stringify({ event: 'auth', args: [token] }))
+
+                // Update history for graph
+                setResourceHistory(prev => {
+                    const now = Date.now()
+                    const memPercent = (data.resources.memory / (limits.memory * 1024 * 1024)) * 100
+                    return [...prev, {
+                        cpu: data.resources.cpu || 0,
+                        memory: memPercent,
+                        time: now
+                    }].slice(-60)
+                })
+            } else {
+                setStatus('error')
             }
-
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data)
-
-                    switch (data.event) {
-                        case 'auth success':
-                            term.writeln('\x1b[32m[Dragohost] Successfully authenticated!\x1b[0m')
-                            // Request logs
-                            ws.send(JSON.stringify({ event: 'send logs', args: [null] }))
-                            break
-
-                        case 'console output':
-                            // Write console output to terminal
-                            if (data.args && data.args[0]) {
-                                term.write(data.args[0])
-                            }
-                            break
-
-                        case 'status':
-                            // Server status changed
-                            if (data.args && data.args[0]) {
-                                const newState = data.args[0]
-                                setServerState(newState)
-                                const color = newState === 'running' ? '\x1b[32m' :
-                                    newState === 'starting' ? '\x1b[33m' :
-                                        newState === 'stopping' ? '\x1b[33m' : '\x1b[31m'
-                                term.writeln(`${color}[Status] Server is now ${newState}\x1b[0m`)
-                            }
-                            break
-
-                        case 'stats':
-                            // Resource stats update
-                            if (data.args && data.args[0]) {
-                                const stats = JSON.parse(data.args[0])
-                                const newResources = {
-                                    cpu: stats.cpu_absolute || 0,
-                                    memory: stats.memory_bytes || 0,
-                                    disk: stats.disk_bytes || 0,
-                                    networkRx: stats.network?.rx_bytes || 0,
-                                    networkTx: stats.network?.tx_bytes || 0,
-                                    uptime: stats.uptime || 0
-                                }
-                                setResources(newResources)
-                                setServerState(stats.state || 'offline')
-
-                                // Update history for graphs
-                                setResourceHistory(prev => {
-                                    const now = Date.now()
-                                    const newHistory = [...prev, {
-                                        cpu: newResources.cpu,
-                                        memory: (newResources.memory / (limits.memory * 1024 * 1024)) * 100,
-                                        time: now
-                                    }].slice(-60) // Keep last 60 data points
-                                    return newHistory
-                                })
-                            }
-                            break
-
-                        case 'token expiring':
-                            // Token is expiring, reconnect
-                            term.writeln('\x1b[33m[Dragohost] Refreshing connection...\x1b[0m')
-                            ws.close()
-                            break
-
-                        case 'token expired':
-                            ws.close()
-                            break
-                    }
-                } catch (e) {
-                    console.error('Failed to parse WebSocket message:', e)
-                }
-            }
-
-            ws.onclose = () => {
-                setStatus('disconnected')
-                term.writeln('\x1b[31m[Dragohost] Connection closed. Reconnecting in 3s...\x1b[0m')
-
-                // Clear existing timeout
-                if (reconnectTimeoutRef.current) {
-                    clearTimeout(reconnectTimeoutRef.current)
-                }
-
-                // Reconnect after delay
-                reconnectTimeoutRef.current = setTimeout(() => {
-                    connect()
-                }, 3000)
-            }
-
-            ws.onerror = () => {
-                term.writeln('\x1b[31m[Dragohost] WebSocket error occurred\x1b[0m')
-            }
-
         } catch (error) {
-            console.error('Failed to connect:', error)
-            const errorMsg = error instanceof Error ? error.message : 'Unknown error'
-            term.writeln(`\x1b[31m[Dragohost] Failed to connect: ${errorMsg}\x1b[0m`)
-            setStatus('disconnected')
-
-            // Retry connection
-            reconnectTimeoutRef.current = setTimeout(() => {
-                connect()
-            }, 5000)
+            console.error('Failed to fetch resources:', error)
+            setStatus('error')
         }
     }, [identifier, limits.memory])
 
-    // Initialize
+    // Polling loop
     useEffect(() => {
-        connect()
+        fetchResources()
+        const interval = setInterval(fetchResources, 2000) // Poll every 2 seconds
+        return () => clearInterval(interval)
+    }, [fetchResources])
 
-        const handleResize = () => {
-            fitAddonRef.current?.fit()
+    // Auto-scroll console
+    useEffect(() => {
+        if (consoleRef.current) {
+            consoleRef.current.scrollTop = consoleRef.current.scrollHeight
         }
-        window.addEventListener('resize', handleResize)
-
-        return () => {
-            window.removeEventListener('resize', handleResize)
-            if (reconnectTimeoutRef.current) {
-                clearTimeout(reconnectTimeoutRef.current)
-            }
-            if (socketRef.current) {
-                socketRef.current.close()
-            }
-            if (xtermRef.current) {
-                xtermRef.current.dispose()
-            }
-        }
-    }, [connect])
+    }, [consoleLogs])
 
     // Send command
     const sendCommand = async (e?: React.FormEvent) => {
         if (e) e.preventDefault()
-        if (!command.trim() || !socketRef.current) return
+        if (!command.trim()) return
 
-        if (socketRef.current.readyState === WebSocket.OPEN) {
-            socketRef.current.send(JSON.stringify({
-                event: 'send command',
-                args: [command]
-            }))
-            setCommand('')
+        const cmd = command.trim()
+        setCommand('')
+        setConsoleLogs(prev => [...prev, `\x1b[36m> ${cmd}\x1b[0m`])
+
+        try {
+            const response = await fetch(`/api/servers/${identifier}/console`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: cmd })
+            })
+
+            if (response.ok) {
+                setConsoleLogs(prev => [...prev, '\x1b[32m[Dragohost] Command sent successfully\x1b[0m'])
+            } else {
+                const error = await response.json()
+                setConsoleLogs(prev => [...prev, `\x1b[31m[Error] ${error.error}\x1b[0m`])
+            }
+        } catch (error) {
+            setConsoleLogs(prev => [...prev, '\x1b[31m[Error] Failed to send command\x1b[0m'])
         }
     }
 
     // Power actions
     const handlePowerAction = async (action: 'start' | 'stop' | 'restart' | 'kill') => {
         setPowerAction(action)
+        setConsoleLogs(prev => [...prev, `\x1b[33m[Dragohost] Sending ${action} signal...\x1b[0m`])
+
         try {
             const response = await fetch(`/api/servers/${identifier}/power`, {
                 method: 'POST',
@@ -291,18 +171,20 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
                 body: JSON.stringify({ action })
             })
 
-            if (!response.ok) {
+            if (response.ok) {
+                setConsoleLogs(prev => [...prev, `\x1b[32m[Dragohost] ${action.charAt(0).toUpperCase() + action.slice(1)} signal sent\x1b[0m`])
+            } else {
                 const error = await response.json()
-                xtermRef.current?.writeln(`\x1b[31m[Dragohost] Power action failed: ${error.error}\x1b[0m`)
+                setConsoleLogs(prev => [...prev, `\x1b[31m[Error] ${error.error}\x1b[0m`])
             }
         } catch (error) {
-            console.error('Power action failed:', error)
+            setConsoleLogs(prev => [...prev, '\x1b[31m[Error] Power action failed\x1b[0m'])
         } finally {
             setPowerAction(null)
         }
     }
 
-    // Get status color
+    // Status colors
     const getStatusColor = (state: string) => {
         switch (state) {
             case 'running': return 'text-green-400'
@@ -332,16 +214,16 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
                         <span className="text-xs font-medium text-gray-400 uppercase tracking-wider">Console</span>
                         <div className="flex items-center gap-1.5">
                             {status === 'connected' ? (
-                                <Wifi className="w-3 h-3 text-green-400" />
-                            ) : status === 'connecting' ? (
+                                <RefreshCw className="w-3 h-3 text-green-400" />
+                            ) : status === 'polling' ? (
                                 <Loader2 className="w-3 h-3 animate-spin text-cyan-400" />
                             ) : (
                                 <WifiOff className="w-3 h-3 text-red-400" />
                             )}
                             <span className={`text-[10px] font-bold uppercase ${status === 'connected' ? 'text-green-400' :
-                                    status === 'connecting' ? 'text-cyan-400' : 'text-red-400'
+                                    status === 'polling' ? 'text-cyan-400' : 'text-red-400'
                                 }`}>
-                                {status}
+                                {status === 'connected' ? 'Live' : status}
                             </span>
                         </div>
                     </div>
@@ -357,8 +239,20 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
                     </div>
                 </div>
 
-                {/* Terminal */}
-                <div className="flex-1 p-1 overflow-hidden" ref={terminalRef} />
+                {/* Console Output */}
+                <div
+                    ref={consoleRef}
+                    className="flex-1 p-3 overflow-auto font-mono text-sm text-gray-300 bg-[#0a0a0a] scrollbar-thin scrollbar-thumb-white/10"
+                    style={{ maxHeight: '400px' }}
+                >
+                    {consoleLogs.map((log, i) => (
+                        <div
+                            key={i}
+                            className="whitespace-pre-wrap break-all leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: parseAnsi(log) }}
+                        />
+                    ))}
+                </div>
 
                 {/* Command Input */}
                 <form onSubmit={sendCommand} className="p-3 bg-white/5 border-t border-white/5 flex gap-2">
@@ -377,7 +271,7 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
                     </div>
                     <button
                         type="submit"
-                        disabled={status !== 'connected' || !command.trim() || serverState !== 'running'}
+                        disabled={!command.trim() || serverState !== 'running'}
                         className="p-2 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-lg hover:bg-cyan-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
                         <Send className="w-4 h-4" />
@@ -519,8 +413,8 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
                 {/* Mini Resource Graph */}
                 {resourceHistory.length > 5 && (
                     <div className="card p-4">
-                        <h3 className="text-sm font-medium text-gray-400 mb-3">Usage History</h3>
-                        <div className="h-20 relative flex items-end gap-0.5">
+                        <h3 className="text-sm font-medium text-gray-400 mb-3">CPU History</h3>
+                        <div className="h-16 relative flex items-end gap-0.5">
                             <AnimatePresence mode="popLayout">
                                 {resourceHistory.slice(-30).map((point, i) => (
                                     <motion.div
@@ -535,7 +429,7 @@ export default function ServerConsole({ serverId, identifier, limits }: ServerCo
                             </AnimatePresence>
                         </div>
                         <div className="flex justify-between text-[10px] text-gray-500 mt-1">
-                            <span>30s ago</span>
+                            <span>60s ago</span>
                             <span>Now</span>
                         </div>
                     </div>
